@@ -103,7 +103,8 @@ class EditorWidget(QWidget):
 
         :type grid: QFormLayout
         """
-        self._paramname_label.setText(self.parameter.name)
+        param_name = self.parameter.name.split('.', 1)[-1]
+        self._paramname_label.setText(param_name)
         self._paramname_label.setMinimumWidth(100)
         grid.addRow(self._paramname_label, self)
         self.setToolTip(self.descriptor.description)

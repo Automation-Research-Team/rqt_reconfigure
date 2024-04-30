@@ -77,9 +77,8 @@ class ParamClientWidget(QWidget):
 
         self._editor_widgets = {}
 
-        self._param_client = create_param_client(
-            context.node, node_name, self._handle_param_event
-        )
+        self._param_client = create_param_client(context.node, node_name,
+                                                 self._handle_param_event)
 
         verticalLayout = QVBoxLayout(self)
         verticalLayout.setContentsMargins(QMargins(0, 0, 0, 0))
@@ -109,12 +108,12 @@ class ParamClientWidget(QWidget):
 
         filter_widget = QWidget(self)
         filter_h_layout = QHBoxLayout()
-        self.text_filter = TextFilter()
-        self.text_filter_widget = TextFilterWidget(self.text_filter)
-        self.filter_label = QLabel('&Filter param:')
-        self.filter_label.setBuddy(self.text_filter_widget)
-        filter_h_layout.addWidget(self.filter_label)
-        filter_h_layout.addWidget(self.text_filter_widget)
+        self._text_filter = TextFilter()
+        text_filter_widget = TextFilterWidget(self._text_filter)
+        filter_label = QLabel('&Filter param:')
+        filter_label.setBuddy(text_filter_widget)
+        filter_h_layout.addWidget(filter_label)
+        filter_h_layout.addWidget(text_filter_widget)
         filter_widget.setLayout(filter_h_layout)
 
         grid_widget = QWidget(self)
@@ -124,11 +123,8 @@ class ParamClientWidget(QWidget):
         verticalLayout.addWidget(grid_widget, 1)
         # Again, these UI operation above needs to happen in .ui file.
         try:
-            param_names = self._param_client.list_parameters()
-            self.add_editor_widgets(
-                self._param_client.get_parameters(param_names),
-                self._param_client.describe_parameters(param_names)
-            )
+            self.add_editor_widgets(self._param_client.get_parameters(
+                                        self._param_client.list_parameters()))
         except Exception as e:
             logging.warn(
                 f'Failed to retrieve parameters from node {self._node_grn}: {e}')
@@ -150,7 +146,7 @@ class ParamClientWidget(QWidget):
         button_header.addWidget(save_button)
         button_header.addWidget(load_button)
 
-        self.text_filter.filter_changed_signal.connect(
+        self._text_filter.filter_changed_signal.connect(
             self._filter_key_changed
         )
 
@@ -159,16 +155,12 @@ class ParamClientWidget(QWidget):
     def get_node_grn(self):
         return self._node_grn
 
-    def _handle_param_event(
-        self, new_parameters, changed_parameters, deleted_parameters
-    ):
+    def _handle_param_event(self, new_parameters,
+                            changed_parameters, deleted_parameters):
         # TODO: Think about replacing callback architecture with signals.
         if new_parameters:
             try:
-                new_descriptors = self._param_client.describe_parameters(
-                    names=[p.name for p in new_parameters]
-                )
-                self.add_editor_widgets(new_parameters, new_descriptors)
+                self.add_editor_widgets(new_parameters)
             except Exception as e:
                 logging.warn(
                     'Failed to get information about parameters: ' + str(e))
@@ -241,7 +233,9 @@ class ParamClientWidget(QWidget):
                 parameter.name))
             self._editor_widgets[parameter.name].update_local(parameter.value)
 
-    def add_editor_widgets(self, parameters, descriptors):
+    def add_editor_widgets(self, parameters):
+        descriptors = self._param_client.describe_parameters(
+                        names=[p.name for p in parameters])
         for parameter, descriptor in zip(parameters, descriptors):
             if descriptor.additional_constraints == '':
                 if Parameter.Type(descriptor.type) not in EDITOR_TYPES:
@@ -275,7 +269,7 @@ class ParamClientWidget(QWidget):
         self.deleteLater()
 
     def _filter_key_changed(self):
-        self._filter_param(self.text_filter.get_text())
+        self._filter_param(self._text_filter.get_text())
 
     def _filter_param(self, filter_key):
         try:
@@ -288,12 +282,6 @@ class ParamClientWidget(QWidget):
             client_params_filtered = self._param_client.get_parameters(
                 param_names_filtered
             )
-            client_params_desc = self._param_client.describe_parameters(
-                param_names_filtered
-            )
-            self.add_editor_widgets(
-                client_params_filtered,
-                client_params_desc
-            )
+            self.add_editor_widgets(client_params_filtered)
         except Exception as e:
             logging.warn('Failed to retrieve parameters from node: ' + str(e))
