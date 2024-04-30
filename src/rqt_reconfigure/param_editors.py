@@ -37,7 +37,7 @@ import os
 from ament_index_python import get_resource
 
 from python_qt_binding import loadUi
-from python_qt_binding.QtCore import QEvent, QLocale, Signal
+from python_qt_binding.QtCore import QEvent, QLocale, Qt, Signal
 from python_qt_binding.QtGui import QDoubleValidator, QIntValidator
 from python_qt_binding.QtWidgets import QMenu, QWidget
 
@@ -507,6 +507,101 @@ class ArrayEditor(EditorWidget):
 
     def _set_to_empty(self):
         self.update('[]')
+
+
+class EnumEditor(EditorWidget):
+    _update_signal = Signal(int)
+    _invalid_value_signal = Signal(str)
+
+    def __init__(self, *args, **kwargs):
+        super(EnumEditor, self).__init__(*args, **kwargs)
+        ui_enum = os.path.join(
+            package_path, 'share', 'rqt_reconfigure', 'resource',
+            'editor_enum.ui')
+        loadUi(ui_enum, self)
+        try:
+            d = eval(self.descriptor.additional_constraints)
+            enum = d['enum']
+        except:  # noqa: E722
+            logging.error('reconfig EnumEditor) Malformed enum')
+            return
+
+        # Setup the enum items
+        self.names  = [name for name in enum.keys()]
+        self.values = [value for value in enum.values()]
+        self.enum_description = d['enum_description']
+
+        items = ['%s (%s)' % (self.names[i], self.values[i])
+                 for i in range(0, len(self.names))]
+
+        # Add items to the combo box
+        self._combobox.addItems(items)
+        for i in range(self._combobox.count()):
+            self._combobox.setItemData(i, self.enum_description,
+                                       Qt.ToolTipRole)
+
+        # Initialize to the default
+        if self.parameter.value in self.values:
+            self._combobox.setCurrentIndex(self.values.index(
+                                               self.parameter.value))
+        else:
+            self._combobox.setCurrentIndex(0)
+
+        # Make selection update the param server
+        self._combobox.currentIndexChanged['int'].connect(self.selected)
+
+        # Make the param server update selection
+        self._update_signal.connect(self._update_gui)
+
+        # Bind the context menu
+        self._combobox.contextMenuEvent = self.contextMenuEvent
+
+        # Add the invalid value handler
+        self._invalid_value_signal.connect(self._handle_invalid_value)
+
+        # Don't process wheel events when not focused
+        self._combobox.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel and not obj.hasFocus():
+            return True
+        return super(EditorWidget, self).eventFilter(obj, event)
+
+    def selected(self, index):
+        try:
+            value = self.values[index]
+        except IndexError:
+            logging.error("Invalid selection '{}' for parameter '{}'".format(
+                self._combobox.itemText(index), self.parameter.name))
+        else:
+            self.update(value)
+
+    def update_local(self, value):
+        super(EnumEditor, self).update_local(value)
+        try:
+            index = self.values.index(value)
+        except ValueError:
+            self._invalid_value_signal.emit('invalid ({})'.format(value))
+        else:
+            self._update_signal.emit(index)
+
+    def _handle_invalid_value(self, value):
+        # Block all signals so we don't loop
+        self._combobox.blockSignals(True)
+        if self._combobox.count() > len(self.values):
+            self._combobox.setItemText(len(self.values), value)
+        else:
+            self._combobox.addItem(value)
+        self._combobox.setCurrentIndex(len(self.values))
+        self._combobox.blockSignals(False)
+
+    def _update_gui(self, idx):
+        # Block all signals so we don't loop
+        self._combobox.blockSignals(True)
+        self._combobox.setCurrentIndex(idx)
+        # Remove any previous invalid value
+        self._combobox.removeItem(len(self.values))
+        self._combobox.blockSignals(False)
 
 
 EDITOR_TYPES = {

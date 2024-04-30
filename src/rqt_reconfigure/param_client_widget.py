@@ -51,7 +51,7 @@ from rqt_reconfigure.param_api import create_param_client
 from rqt_reconfigure.param_editors import (BooleanEditor,  # noqa: F401
                                            DoubleEditor, EDITOR_TYPES,
                                            EditorWidget, IntegerEditor,
-                                           StringEditor)
+                                           StringEditor, EnumEditor)
 
 from rqt_reconfigure.text_filter import TextFilter
 from rqt_reconfigure.text_filter_widget import TextFilterWidget
@@ -243,12 +243,16 @@ class ParamClientWidget(QWidget):
 
     def add_editor_widgets(self, parameters, descriptors):
         for parameter, descriptor in zip(parameters, descriptors):
-            if Parameter.Type(descriptor.type) not in EDITOR_TYPES:
-                continue
-            logging.debug('Adding editor widget for {}'.format(parameter.name))
-            editor_widget = EDITOR_TYPES[Parameter.Type(descriptor.type)](
-                self._param_client, parameter, descriptor
-            )
+            if descriptor.additional_constraints == '':
+                if Parameter.Type(descriptor.type) not in EDITOR_TYPES:
+                    continue
+                logging.debug('Adding editor widget for {}'.format(parameter.name))
+                editor_widget = EDITOR_TYPES[Parameter.Type(descriptor.type)](
+                    self._param_client, parameter, descriptor
+                )
+            else:
+                editor_widget = EnumEditor(self._param_client, parameter,
+                                           descriptor)
             self._editor_widgets[parameter.name] = editor_widget
             editor_widget.display(self.grid)
 

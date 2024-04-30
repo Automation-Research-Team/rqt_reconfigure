@@ -12,6 +12,7 @@ setup(
             'resource/editor_enum.ui',
             'resource/editor_number.ui',
             'resource/editor_string.ui',
+            'resource/editor_enum.ui',
             'resource/node_selector.ui',
             'resource/paramedit_pane.ui',
             'resource/param_main.ui',
