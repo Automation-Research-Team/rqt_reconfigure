@@ -38,9 +38,7 @@ from python_qt_binding.QtWidgets import (QFileDialog, QFormLayout,
 import rclpy
 
 from rclpy.parameter import Parameter
-
 from rqt_reconfigure import logging
-
 from rqt_reconfigure.param_api import create_param_client
 
 """
@@ -56,10 +54,12 @@ from rqt_reconfigure.param_editors import (BooleanEditor,  # noqa: F401
 from rqt_reconfigure.text_filter import TextFilter
 from rqt_reconfigure.text_filter_widget import TextFilterWidget
 
+from rqt_reconfigure.param_groups import GroupWidget
+
 import yaml
 
 
-class ParamClientWidget(QWidget):
+class ParamClientWidget(GroupWidget):
     # Represents a widget where users can view and modify ROS params.
 
     sig_node_disabled_selected = Signal(str)
@@ -71,22 +71,30 @@ class ParamClientWidget(QWidget):
 
         :type node_name: str
         """
-        super(ParamClientWidget, self).__init__()
+        super(ParamClientWidget, self).__init__(
+            create_param_client(context.node, node_name,
+                                self._handle_param_event), node_name)
+
         self._node_grn = node_name
         self._toplevel_treenode_name = node_name
-
-        self._editor_widgets = {}
-
-        self._param_client = create_param_client(context.node, node_name,
-                                                 self._handle_param_event)
-
-        verticalLayout = QVBoxLayout(self)
-        verticalLayout.setContentsMargins(QMargins(0, 0, 0, 0))
 
         widget_nodeheader = QWidget()
         h_layout_nodeheader = QHBoxLayout(widget_nodeheader)
         h_layout_nodeheader.setContentsMargins(QMargins(0, 0, 0, 0))
 
+        # Save and load buttons
+        load_button = QPushButton()
+        load_button.setIcon(QIcon.fromTheme('document-open'))
+        load_button.setFixedSize(QSize(36, 24))
+        load_button.clicked[bool].connect(self._handle_load_clicked)
+        h_layout_nodeheader.addWidget(load_button)
+        save_button = QPushButton()
+        save_button.setIcon(QIcon.fromTheme('document-save'))
+        save_button.setFixedSize(QSize(36, 24))
+        save_button.clicked[bool].connect(self._handle_save_clicked)
+        h_layout_nodeheader.addWidget(save_button)
+
+        # Label for node name
         nodename_qlabel = QLabel(self)
         font = QFont('Trebuchet MS, Bold')
         font.setUnderline(True)
@@ -106,21 +114,9 @@ class ParamClientWidget(QWidget):
         bt_disable_node.pressed.connect(self._node_disable_bt_clicked)
         h_layout_nodeheader.addWidget(bt_disable_node)
 
-        filter_widget = QWidget(self)
-        filter_h_layout = QHBoxLayout()
-        self._text_filter = TextFilter()
-        text_filter_widget = TextFilterWidget(self._text_filter)
-        filter_label = QLabel('&Filter param:')
-        filter_label.setBuddy(text_filter_widget)
-        filter_h_layout.addWidget(filter_label)
-        filter_h_layout.addWidget(text_filter_widget)
-        filter_widget.setLayout(filter_h_layout)
-
-        grid_widget = QWidget(self)
-        self.grid = QFormLayout(grid_widget)
-        verticalLayout.addWidget(widget_nodeheader)
-        verticalLayout.addWidget(filter_widget)
-        verticalLayout.addWidget(grid_widget, 1)
+        self.verticalLayout.addWidget(widget_nodeheader)
+        #verticalLayout.addWidget(filter_widget)
+        self.verticalLayout.addWidget(self.grid_widget, 1)
         # Again, these UI operation above needs to happen in .ui file.
         try:
             self.add_editor_widgets(self._param_client.get_parameters(
@@ -129,26 +125,8 @@ class ParamClientWidget(QWidget):
             logging.warn(
                 f'Failed to retrieve parameters from node {self._node_grn}: {e}')
 
-        # Save and load buttons
-        button_widget = QWidget(self)
-        button_header = QHBoxLayout(button_widget)
-        button_header.setContentsMargins(QMargins(0, 0, 0, 0))
-
-        load_button = QPushButton()
-        save_button = QPushButton()
-
-        load_button.setIcon(QIcon.fromTheme('document-open'))
-        save_button.setIcon(QIcon.fromTheme('document-save'))
-
-        load_button.clicked[bool].connect(self._handle_load_clicked)
-        save_button.clicked[bool].connect(self._handle_save_clicked)
-
-        button_header.addWidget(save_button)
-        button_header.addWidget(load_button)
-
-        self._text_filter.filter_changed_signal.connect(
-            self._filter_key_changed
-        )
+        # self._text_filter.filter_changed_signal.connect(
+        #     self._filter_key_changed)
 
         self.setMinimumWidth(150)
 
@@ -188,8 +166,7 @@ class ParamClientWidget(QWidget):
         with open(filename, 'w') as f:
             try:
                 parameters = self._param_client.get_parameters(
-                    self._param_client.list_parameters()
-                )
+                                 self._param_client.list_parameters())
                 yaml.dump({p.name: p.value for p in parameters}, f)
             except Exception as e:
                 logging.warn(
@@ -215,40 +192,19 @@ class ParamClientWidget(QWidget):
     def collect_paramnames(self, config):
         pass
 
+    def add_editor_widgets(self, parameters):
+        descriptors = self._param_client.describe_parameters(
+                          names=[p.name for p in parameters])
+        for parameter, descriptor in zip(parameters, descriptors):
+            self.add_editor_widget(parameter, descriptor, 0)
+
     def remove_editor_widgets(self, parameters):
         for parameter in parameters:
-            if parameter.name not in self._editor_widgets:
-                continue
-            logging.debug('Removing editor widget for {}'.format(
-                parameter.name))
-            self._editor_widgets[parameter.name].hide(self.grid)
-            self._editor_widgets[parameter.name].close()
-            del self._editor_widgets[parameter.name]
+            self.remove_editor_widget(parameter)
 
     def update_editor_widgets(self, parameters):
         for parameter in parameters:
-            if parameter.name not in self._editor_widgets:
-                continue
-            logging.debug('Updating editor widget for {}'.format(
-                parameter.name))
-            self._editor_widgets[parameter.name].update_local(parameter.value)
-
-    def add_editor_widgets(self, parameters):
-        descriptors = self._param_client.describe_parameters(
-                        names=[p.name for p in parameters])
-        for parameter, descriptor in zip(parameters, descriptors):
-            if descriptor.additional_constraints == '':
-                if Parameter.Type(descriptor.type) not in EDITOR_TYPES:
-                    continue
-                logging.debug('Adding editor widget for {}'.format(parameter.name))
-                editor_widget = EDITOR_TYPES[Parameter.Type(descriptor.type)](
-                    self._param_client, parameter, descriptor
-                )
-            else:
-                editor_widget = EnumEditor(self._param_client, parameter,
-                                           descriptor)
-            self._editor_widgets[parameter.name] = editor_widget
-            editor_widget.display(self.grid)
+            self.update_editor_widget(parameter)
 
     def display(self, grid):
         grid.addRow(self)
