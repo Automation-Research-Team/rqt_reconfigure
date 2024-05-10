@@ -136,20 +136,8 @@ class ParamClientWidget(GroupWidget):
     def get_node_grn(self):
         return self._node_grn
 
-    def _handle_param_event(self, new_parameters,
-                            changed_parameters, deleted_parameters):
-        # TODO: Think about replacing callback architecture with signals.
-        if new_parameters:
-            try:
-                self.add_editor_widgets(new_parameters)
-            except Exception as e:
-                logging.warn(
-                    'Failed to get information about parameters: ' + str(e))
-
-        if changed_parameters:
-            self.update_editor_widgets(changed_parameters)
-        if deleted_parameters:
-            self.remove_editor_widgets(deleted_parameters)
+    def get_treenode_names(self):
+        return self._param_client.list_parameters()
 
     def _handle_load_clicked(self):
         filename = QFileDialog.getOpenFileName(
@@ -157,6 +145,19 @@ class ParamClientWidget(GroupWidget):
             self.tr('YAML file {.yaml} (*.yaml)'))
         if filename[0] != '':
             self.load_param(filename[0])
+
+    def load_param(self, filename):
+        with open(filename, 'r') as f:
+            parameters = [Parameter(name=name, value=value)
+                          for doc in yaml.safe_load_all(f.read())
+                          for name, value in doc.items()]
+        try:
+            self._param_client.set_parameters(parameters)
+        except Exception as e:
+            logging.warn(
+                "Parameter loading wasn't successful"
+                ' because: {}'.format(e)
+            )
 
     def _handle_save_clicked(self):
         filename = QFileDialog.getSaveFileName(
@@ -176,18 +177,20 @@ class ParamClientWidget(GroupWidget):
                     "Parameter saving wasn't successful because: " + str(e)
                 )
 
-    def load_param(self, filename):
-        with open(filename, 'r') as f:
-            parameters = [Parameter(name=name, value=value)
-                          for doc in yaml.safe_load_all(f.read())
-                          for name, value in doc.items()]
-        try:
-            self._param_client.set_parameters(parameters)
-        except Exception as e:
-            logging.warn(
-                "Parameter loading wasn't successful"
-                ' because: {}'.format(e)
-            )
+    def _handle_param_event(self, new_parameters,
+                            changed_parameters, deleted_parameters):
+        # TODO: Think about replacing callback architecture with signals.
+        if new_parameters:
+            try:
+                self.add_editor_widgets(new_parameters)
+            except Exception as e:
+                logging.warn(
+                    'Failed to get information about parameters: ' + str(e))
+
+        if changed_parameters:
+            self.update_editor_widgets(changed_parameters)
+        if deleted_parameters:
+            self.remove_editor_widgets(deleted_parameters)
 
     def add_editor_widgets(self, parameters):
         for parameter in parameters:
@@ -201,9 +204,6 @@ class ParamClientWidget(GroupWidget):
         for parameter in parameters:
             self.update_editor_widget(parameter)
 
-    def get_treenode_names(self):
-        return list(self._editor_widgets.keys())
-
     def close(self):
         super(ParamClientWidget, self).close()
         self._param_client.close()
@@ -214,9 +214,7 @@ class ParamClientWidget(GroupWidget):
         self.sig_node_disabled_selected.emit(self._toplevel_treenode_name)
 
     def _filter_key_changed(self):
-        self._filter_param(self._text_filter.get_text())
-
-    def _filter_param(self, filter_key):
+        filter_key = self._text_filter.get_text()
         try:
             param_names = self._param_client.list_parameters()
             self.remove_editor_widgets(
