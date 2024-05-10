@@ -30,10 +30,8 @@
 
 from python_qt_binding.QtCore import QMargins, QSize, Qt, Signal
 from python_qt_binding.QtGui import QFont, QIcon
-from python_qt_binding.QtWidgets import (QFileDialog, QFormLayout,
-                                         QHBoxLayout, QLabel,
-                                         QPushButton, QVBoxLayout,
-                                         QWidget)
+from python_qt_binding.QtWidgets import (QFileDialog, QHBoxLayout, QLabel,
+                                         QPushButton, QWidget)
 
 from rclpy.parameter import Parameter
 from rqt_reconfigure import logging
@@ -58,7 +56,6 @@ class ParamClientWidget(GroupWidget):
     # Represents a widget where users can view and modify ROS params.
 
     sig_node_disabled_selected = Signal(str)
-    sig_node_state_change = Signal(bool)
 
     def __init__(self, context, node_name):
         """
@@ -129,10 +126,10 @@ class ParamClientWidget(GroupWidget):
                                         self._param_client.list_parameters()))
         except Exception as e:
             logging.warn(
-                f'Failed to retrieve parameters from node {self._node_grn}: {e}')
+              f'Failed to retrieve parameters from node {self._node_grn}: {e}')
 
-        # self._text_filter.filter_changed_signal.connect(
-        #     self._filter_key_changed)
+        self._text_filter.filter_changed_signal.connect(
+            self._filter_key_changed)
 
         self.setMinimumWidth(150)
 
@@ -221,17 +218,13 @@ class ParamClientWidget(GroupWidget):
 
     def _filter_param(self, filter_key):
         try:
-            print('*** filter_key=' + filter_key)
             param_names = self._param_client.list_parameters()
+            self.remove_editor_widgets(
+                self._param_client.get_parameters(param_names))
+
             param_names_filtered = \
                 list(filter(lambda p: filter_key in p, param_names)) if filter_key else param_names
-            print('*** param_names_filtered=' + str(param_names_filtered))
-            client_params_remove = self._param_client.get_parameters(
-                                       list(self._editor_widgets.keys()))
-            print('*** client_params_remove=' + str(client_params_remove))
-            self.remove_editor_widgets(client_params_remove)
-            client_params_filtered = self._param_client.get_parameters(
-                                         param_names_filtered)
-            self.add_editor_widgets(client_params_filtered)
+            self.add_editor_widgets(
+                self._param_client.get_parameters(param_names_filtered))
         except Exception as e:
             logging.warn('Failed to retrieve parameters from node: ' + str(e))
