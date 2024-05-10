@@ -74,30 +74,25 @@ class GroupWidget(QWidget):
 
         self._editor_widgets = {}
         self._group_widgets = {}
-        self._param_names = []
+        self._tab_bar = None  # Every group can have one tab bar
 
-        self.verticalLayout = QVBoxLayout(self)
-        self.verticalLayout.setContentsMargins(QMargins(0, 0, 0, 0))
+        self._verticalLayout = QVBoxLayout(self)
+        self._verticalLayout.setContentsMargins(QMargins(0, 0, 0, 0))
 
-        self.grid_widget = QWidget(self)
-        self.grid = QFormLayout(self.grid_widget)
-        self.verticalLayout.addWidget(self.grid_widget, 1)
-
-        self.tab_bar = None  # Every group can have one tab bar
-        self.tab_bar_shown = False
+        grid_widget = QWidget(self)
+        self._grid = QFormLayout(grid_widget)
+        self.insert_widget_on_top(grid_widget)
 
         logging.debug('Groups node name={}'.format(node_name))
 
-        # Labels should not stretch
-        # self.grid.setColumnStretch(1, 1)
-        # self.setLayout(self.grid)
+    def insert_widget_on_top(self, widget):
+        self._verticalLayout.insertWidget(0, widget)
 
-    def collect_paramnames(self, config):
-        pass
-
-    def add_editor_widget(self, parameter, descriptor, depth):
+    def add_editor_widget(self, parameter, depth=0):
         tokens = parameter.name.split('.', depth + 1)
         if len(tokens) == depth + 1:
+            descriptor = self._param_client.describe_parameters(
+                             [parameter.name])[0]
             if descriptor.additional_constraints == '':
                 if Parameter.Type(descriptor.type) not in EDITOR_TYPES:
                     return
@@ -106,45 +101,57 @@ class GroupWidget(QWidget):
             else:
                 editor_widget = EnumEditor(self._param_client,
                                            parameter, descriptor)
+            print('*** add editor: ' + parameter.name)
             logging.debug('Adding editor widget for {}'.format(parameter.name))
-            self.grid.addRow(editor_widget)
+            editor_widget.display(self._grid)
             self._editor_widgets[parameter.name] = editor_widget
         else:
             group_name = tokens[depth]
-            if group_name not in self._group_widgets:
-                group = TabGroup(self, self._param_client, group_name)
-                group.display(self.grid)
+            group = self._group_widgets.get(group_name, None)
+            if group is None:
+                if self._tab_bar is None:
+                    print('*** add tab_bar')
+                    self._tab_bar = QTabWidget()
+                    #self._tab_bar.tabBar().installEventFilter(self)
+                    self._grid.addRow(self._tab_bar)
+                print('*** add group: ' + group_name)
+                group = GroupWidget(self._param_client, group_name)
                 self._group_widgets[group_name] = group
-            self._group_widgets[group_name].add_editor_widget(parameter,
-                                                              descriptor,
-                                                              depth + 1)
+            group.add_editor_widget(parameter, depth + 1)
 
-    def remove_editor_widget(self, parameter):
-        if parameter.name not in self._editor_widgets:
-            return
-        logging.debug('Removing editor widget for {}'.format(parameter.name))
-        self._editor_widgets[parameter.name].hide(self.grid)
-        self._editor_widgets[parameter.name].close()
-        del self._editor_widgets[parameter.name]
+    def remove_editor_widget(self, parameter, depth=0):
+        tokens = parameter.name.split('.', depth + 1)
+        if len(tokens) == depth + 1:
+            if parameter.name in self._editor_widgets:
+                logging.debug('Removing editor widget for {}'.format(parameter.name))
+                self._editor_widgets[parameter.name].hide(self._grid)
+                self._editor_widgets[parameter.name].close()
+                del self._editor_widgets[parameter.name]
+        else:
+            group_name = tokens[depth]
+            group = self._group_widgets.get(group_name, None)
+            if group is not None and \
+               group.remove_editor_widget(parameter, depth + 1) == 0:
+                del self._group_widgets[group_name]
+        return len(self._editor_widgets)
 
-    def update_editor_widget(self, parameter):
-        if parameter.name not in self._editor_widgets:
-            return
-        logging.debug('Updating editor widget for {}'.format(parameter.name))
-        self._editor_widgets[parameter.name].update_local(parameter.value)
-
-    def display(self, grid):
-        grid.addRow(self)
+    def update_editor_widget(self, parameter, depth=0):
+        tokens = parameter.name.split('.', depth + 1)
+        if len(tokens) == depth + 1:
+            if parameter.name in self._editor_widgets:
+                logging.debug('Updating editor widget for {}'.format(parameter.name))
+                self._editor_widgets[parameter.name].update_local(parameter.value)
+        else:
+            group_name = tokens[depth]
+            group = self._group_widgets.get(group_name, None)
+            if group is not None:
+                group.update_editor_widget(parameter, depth + 1)
 
     def close(self):
-        for w in self._editor_widgets:
-            w.close()
-
-    def get_treenode_names(self):
-        """
-        :rtype: str[]
-        """
-        return self._param_names
+        for editor_widget in self._editor_widgets.values():
+            editor_widget.close()
+        for group_widget in self._group_widgets.values():
+            group_widget.close()
 
     def _node_disable_bt_clicked(self):
         logging.debug('param_gs _node_disable_bt_clicked')
@@ -156,27 +163,20 @@ class TabGroup(GroupWidget):
         super(TabGroup, self).__init__(param_client, group_name)
         self._parent = parent
 
-        if not self._parent.tab_bar:
-            self._parent.tab_bar = QTabWidget()
+        # if not self._parent.tab_bar:
+        #     self._parent.tab_bar = QTabWidget()
 
-            # Don't process wheel events when not focused
-            self._parent.tab_bar.tabBar().installEventFilter(self)
+        #     # Don't process wheel events when not focused
+        #     self._parent.tab_bar.tabBar().installEventFilter(self)
 
-        widget = QWidget()
-        widget.setLayout(self.grid)
-        parent.tab_bar.addTab(widget, group_name)
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Wheel and not obj.hasFocus():
-            return True
-        return super(GroupWidget, self).eventFilter(obj, event)
-
-    def display(self, grid):
-        if not self._parent.tab_bar_shown:
-            grid.addRow(self._parent.tab_bar)
-            self._parent.tab_bar_shown = True
+        #self._parent.tab_bar.addTab(self, group_name)
 
     def close(self):
         super(TabGroup, self).close()
         self._parent.tab_bar = None
         self._parent.tab_bar_shown = False
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel and not obj.hasFocus():
+            return True
+        return super(GroupWidget, self).eventFilter(obj, event)

@@ -35,8 +35,6 @@ from python_qt_binding.QtWidgets import (QFileDialog, QFormLayout,
                                          QPushButton, QVBoxLayout,
                                          QWidget)
 
-import rclpy
-
 from rclpy.parameter import Parameter
 from rqt_reconfigure import logging
 from rqt_reconfigure.param_api import create_param_client
@@ -45,15 +43,12 @@ from rqt_reconfigure.param_api import create_param_client
  Editor classes that are not explicitly used within this .py file still need
  to be imported. They are invoked implicitly during runtime.
 """
-
 from rqt_reconfigure.param_editors import (BooleanEditor,  # noqa: F401
                                            DoubleEditor, EDITOR_TYPES,
                                            EditorWidget, IntegerEditor,
                                            StringEditor, EnumEditor)
-
 from rqt_reconfigure.text_filter import TextFilter
 from rqt_reconfigure.text_filter_widget import TextFilterWidget
-
 from rqt_reconfigure.param_groups import GroupWidget
 
 import yaml
@@ -85,16 +80,17 @@ class ParamClientWidget(GroupWidget):
         # Save and load buttons
         load_button = QPushButton()
         load_button.setIcon(QIcon.fromTheme('document-open'))
-        load_button.setFixedSize(QSize(36, 24))
+        load_button.setToolTip('Load parameters from file')
         load_button.clicked[bool].connect(self._handle_load_clicked)
+        load_button.setFixedSize(QSize(36, 24))
         h_layout_nodeheader.addWidget(load_button)
         save_button = QPushButton()
         save_button.setIcon(QIcon.fromTheme('document-save'))
-        save_button.setFixedSize(QSize(36, 24))
+        save_button.setToolTip('Save parameters to file')
         save_button.clicked[bool].connect(self._handle_save_clicked)
+        save_button.setFixedSize(QSize(36, 24))
         h_layout_nodeheader.addWidget(save_button)
 
-        # Label for node name
         nodename_qlabel = QLabel(self)
         font = QFont('Trebuchet MS, Bold')
         font.setUnderline(True)
@@ -106,17 +102,27 @@ class ParamClientWidget(GroupWidget):
         h_layout_nodeheader.addWidget(nodename_qlabel)
 
         # Button to close a node.
-        icon_disable_node = QIcon.fromTheme('window-close')
-        bt_disable_node = QPushButton(icon_disable_node, '', self)
+        bt_disable_node = QPushButton(self)
+        bt_disable_node.setIcon(QIcon.fromTheme('window-close'))
         bt_disable_node.setToolTip('Hide this node')
         bt_disable_node_size = QSize(36, 24)
         bt_disable_node.setFixedSize(bt_disable_node_size)
         bt_disable_node.pressed.connect(self._node_disable_bt_clicked)
         h_layout_nodeheader.addWidget(bt_disable_node)
 
-        self.verticalLayout.addWidget(widget_nodeheader)
-        #verticalLayout.addWidget(filter_widget)
-        self.verticalLayout.addWidget(self.grid_widget, 1)
+        # Parameter filter
+        filter_widget = QWidget()
+        filter_h_layout = QHBoxLayout(filter_widget)
+        self._text_filter = TextFilter(self)
+        text_filter_widget = TextFilterWidget(self._text_filter)
+        filter_label = QLabel('&Filter param:')
+        filter_label.setBuddy(text_filter_widget)
+        filter_h_layout.addWidget(filter_label)
+        filter_h_layout.addWidget(text_filter_widget)
+
+        self.insert_widget_on_top(filter_widget)
+        self.insert_widget_on_top(widget_nodeheader)
+
         # Again, these UI operation above needs to happen in .ui file.
         try:
             self.add_editor_widgets(self._param_client.get_parameters(
@@ -175,12 +181,9 @@ class ParamClientWidget(GroupWidget):
 
     def load_param(self, filename):
         with open(filename, 'r') as f:
-            parameters = [
-                rclpy.parameter.Parameter(name=name, value=value)
-                for doc in yaml.safe_load_all(f.read())
-                for name, value in doc.items()
-            ]
-
+            parameters = [Parameter(name=name, value=value)
+                          for doc in yaml.safe_load_all(f.read())
+                          for name, value in doc.items()]
         try:
             self._param_client.set_parameters(parameters)
         except Exception as e:
@@ -189,14 +192,9 @@ class ParamClientWidget(GroupWidget):
                 ' because: {}'.format(e)
             )
 
-    def collect_paramnames(self, config):
-        pass
-
     def add_editor_widgets(self, parameters):
-        descriptors = self._param_client.describe_parameters(
-                          names=[p.name for p in parameters])
-        for parameter, descriptor in zip(parameters, descriptors):
-            self.add_editor_widget(parameter, descriptor, 0)
+        for parameter in parameters:
+            self.add_editor_widget(parameter)
 
     def remove_editor_widgets(self, parameters):
         for parameter in parameters:
@@ -206,38 +204,34 @@ class ParamClientWidget(GroupWidget):
         for parameter in parameters:
             self.update_editor_widget(parameter)
 
-    def display(self, grid):
-        grid.addRow(self)
-
     def get_treenode_names(self):
         return list(self._editor_widgets.keys())
+
+    def close(self):
+        super(ParamClientWidget, self).close()
+        self._param_client.close()
+        self.deleteLater()
 
     def _node_disable_bt_clicked(self):
         logging.debug('param_gs _node_disable_bt_clicked')
         self.sig_node_disabled_selected.emit(self._toplevel_treenode_name)
-
-    def close(self):
-        self._param_client.close()
-
-        for w in self._editor_widgets.values():
-            w.close()
-
-        self.deleteLater()
 
     def _filter_key_changed(self):
         self._filter_param(self._text_filter.get_text())
 
     def _filter_param(self, filter_key):
         try:
+            print('*** filter_key=' + filter_key)
             param_names = self._param_client.list_parameters()
             param_names_filtered = \
                 list(filter(lambda p: filter_key in p, param_names)) if filter_key else param_names
+            print('*** param_names_filtered=' + str(param_names_filtered))
             client_params_remove = self._param_client.get_parameters(
-                list(self._editor_widgets.keys()))
+                                       list(self._editor_widgets.keys()))
+            print('*** client_params_remove=' + str(client_params_remove))
             self.remove_editor_widgets(client_params_remove)
             client_params_filtered = self._param_client.get_parameters(
-                param_names_filtered
-            )
+                                         param_names_filtered)
             self.add_editor_widgets(client_params_filtered)
         except Exception as e:
             logging.warn('Failed to retrieve parameters from node: ' + str(e))
