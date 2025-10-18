@@ -83,16 +83,18 @@ class GroupWidget(QWidget):
             if parameter.name not in self._editor_widgets:
                 descriptor = self._param_client.describe_parameters(
                     [parameter.name])[0]
+                if Parameter.Type(descriptor.type) not in EDITOR_TYPES:
+                    return
+
                 if descriptor.additional_constraints == '':
-                    if Parameter.Type(descriptor.type) not in EDITOR_TYPES:
-                        return
                     editor_widget = EDITOR_TYPES[Parameter.Type(
-                                        descriptor.type)](self._param_client,
-                                                          parameter,
-                                                          descriptor)
+                                                     descriptor.type)](
+                                                         self._param_client,
+                                                         parameter, descriptor)
                 else:
                     editor_widget = EnumEditor(self._param_client,
-                                           parameter, descriptor)
+                                               parameter, descriptor)
+
                 logging.debug('Adding editor widget for {}'.format(parameter.name))
                 editor_widget.display(self._grid)
                 self._editor_widgets[parameter.name] = editor_widget

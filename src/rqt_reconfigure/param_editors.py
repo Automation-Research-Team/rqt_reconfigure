@@ -527,12 +527,17 @@ class EnumEditor(EditorWidget):
             package_path, 'share', 'rqt_reconfigure', 'resource',
             'editor_enum.ui')
         loadUi(ui_enum, self)
+
         try:
             d = eval(self.descriptor.additional_constraints)
             enum = d['enum']
         except:  # noqa: E722
-            logging.error('reconfig EnumEditor) Malformed enum')
-            return
+            logging.warn('reconfig EnumEditor) Malformed enum: %s'
+                         % self.descriptor.additional_constraints)
+            d = {'enum_description': ''}
+            s = self.descriptor.additional_constraints
+            l = s[s.find('[')+1:s.find(']')].replace(' ', '').split(',')
+            enum = {elm: elm for elm in l}
 
         # Setup the enum items
         self.names  = [name for name in enum.keys()]
