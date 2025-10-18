@@ -532,12 +532,30 @@ class EnumEditor(EditorWidget):
             d = eval(self.descriptor.additional_constraints)
             enum = d['enum']
         except:  # noqa: E722
-            logging.warn('reconfig EnumEditor) Malformed enum: %s'
-                         % self.descriptor.additional_constraints)
+            s     = self.descriptor.additional_constraints
+            begin = s.find('[')
+            end   = s.find(']')
+            if begin < 0 or end <= begin:
+                logging.error('malformed enum: %s' % s)
+                return
+            l = s[begin + 1:end].replace(' ', '').split(',')
+
+            if Parameter.Type.from_parameter_value(self.parameter.value) \
+                    == Parameter.Type.BOOL:
+                enum = {val: bool(val) for val in l}
+            elif Parameter.Type.from_parameter_value(self.parameter.value) \
+                    == Parameter.Type.INTEGER:
+                enum = {val: int(val) for val in l}
+            elif Parameter.Type.from_parameter_value(self.parameter.value) \
+                    == Parameter.Type.DOUBLE:
+                enum = {val: float(val) for val in l}
+            elif Parameter.Type.from_parameter_value(self.parameter.value) \
+                    == Parameter.Type.STRING:
+                enum = {val: val for val in l}
+            else:
+                logging.error('array parameter cannot be enum: %s' % s)
+                return
             d = {'enum_description': ''}
-            s = self.descriptor.additional_constraints
-            l = s[s.find('[')+1:s.find(']')].replace(' ', '').split(',')
-            enum = {elm: elm for elm in l}
 
         # Setup the enum items
         self.names  = [name for name in enum.keys()]
