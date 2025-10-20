@@ -560,7 +560,7 @@ class EnumEditor(EditorWidget):
         # Setup the enum items
         self.names  = [name for name in enum.keys()]
         self.values = [value for value in enum.values()]
-        self.enum_description = d['enum_description']
+        self.enum_description = d.get('enum_description', '')
 
         items = ['%s (%s)' % (self.names[i], self.values[i])
                  for i in range(0, len(self.names))]
